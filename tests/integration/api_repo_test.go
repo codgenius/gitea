@@ -43,7 +43,7 @@ func TestAPIUserReposNotLogin(t *testing.T) {
 	}
 }
 
-func TestGuardianRunTask23APICreatePrivateRegression(t *testing.T) {
+func TestGuardianRunTask23APICreatePrivateRestored(t *testing.T) {
 	defer tests.PrepareTestEnv(t)()
 
 	session := loginUser(t, "user2")
@@ -55,7 +55,7 @@ func TestGuardianRunTask23APICreatePrivateRegression(t *testing.T) {
 	resp := MakeRequest(t, req, http.StatusCreated)
 	repo := DecodeJSON(t, resp, &api.Repository{})
 
-	assert.False(t, repo.Private)
+	assert.True(t, repo.Private)
 }
 
 func TestAPISearchRepo(t *testing.T) {
