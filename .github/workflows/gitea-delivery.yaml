@@ -6,24 +6,27 @@ on:
     paths-ignore:
       - deploy/guardian-demo/**
 
-permissions:
-  contents: write
-  packages: write
+permissions: {}
 
 jobs:
   deliver:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Reject generated delivery commits
         run: .github/scripts/should-deliver.sh
       - name: Build and push immutable image
         env:
+          GHCR_ACTOR: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
           IMAGE: ghcr.io/${{ github.repository }}
           SOURCE_SHA: ${{ github.sha }}
         run: |
           test "${#SOURCE_SHA}" -eq 40
-          echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
           docker build --file Dockerfile.rootless --tag "$IMAGE:$SOURCE_SHA" .
           docker push "$IMAGE:$SOURCE_SHA"
       - name: Record the delivered source identity
