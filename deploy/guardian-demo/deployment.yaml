@@ -18,7 +18,7 @@ metadata:
   labels:
     app.kubernetes.io/name: gitea
   annotations:
-    guardian.fursa.click/commit-sha: 7595f4858475af24c91738e9b760c3f321a874bf
+    guardian.fursa.click/commit-sha: 47c34c91817d2fd3593a73e250050c48ea7a4faa
 spec:
   replicas: 1
   strategy:
@@ -31,7 +31,7 @@ spec:
       labels:
         app.kubernetes.io/name: gitea
       annotations:
-        guardian.fursa.click/commit-sha: 7595f4858475af24c91738e9b760c3f321a874bf
+        guardian.fursa.click/commit-sha: 47c34c91817d2fd3593a73e250050c48ea7a4faa
     spec:
       securityContext:
         runAsNonRoot: true
@@ -41,7 +41,7 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
       initContainers:
         - name: prepare-gitea-volumes
-          image: ghcr.io/codgenius/gitea:7595f4858475af24c91738e9b760c3f321a874bf
+          image: ghcr.io/codgenius/gitea:47c34c91817d2fd3593a73e250050c48ea7a4faa
           command: [/bin/sh, -ec, mkdir -p /volume/data /volume/config]
           securityContext:
             runAsNonRoot: true
@@ -55,7 +55,7 @@ spec:
               mountPath: /volume
       containers:
         - name: gitea
-          image: ghcr.io/codgenius/gitea:7595f4858475af24c91738e9b760c3f321a874bf
+          image: ghcr.io/codgenius/gitea:47c34c91817d2fd3593a73e250050c48ea7a4faa
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
