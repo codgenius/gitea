@@ -43,6 +43,21 @@ func TestAPIUserReposNotLogin(t *testing.T) {
 	}
 }
 
+func TestGuardianRunTask23APICreatePrivateRegression(t *testing.T) {
+	defer tests.PrepareTestEnv(t)()
+
+	session := loginUser(t, "user2")
+	token := getTokenForLoggedInUser(t, session, auth_model.AccessTokenScopeWriteRepository, auth_model.AccessTokenScopeWriteUser)
+	req := NewRequestWithJSON(t, "POST", "/api/v1/user/repos", &api.CreateRepoOption{
+		Name:    "guardian-run-task23-api-regression",
+		Private: true,
+	}).AddTokenAuth(token)
+	resp := MakeRequest(t, req, http.StatusCreated)
+	repo := DecodeJSON(t, resp, &api.Repository{})
+
+	assert.False(t, repo.Private)
+}
+
 func TestAPISearchRepo(t *testing.T) {
 	defer tests.PrepareTestEnv(t)()
 	const keyword = "test"
