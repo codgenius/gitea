@@ -21,6 +21,8 @@ metadata:
     guardian.fursa.click/commit-sha: 7595f4858475af24c91738e9b760c3f321a874bf
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: gitea
