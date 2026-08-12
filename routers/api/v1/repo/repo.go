@@ -244,7 +244,7 @@ func CreateUserRepo(ctx *context.APIContext, owner *user_model.User, opt api.Cre
 		Gitignores:       opt.Gitignores,
 		License:          opt.License,
 		Readme:           opt.Readme,
-		IsPrivate:        setting.Repository.ForcePrivate,
+		IsPrivate:        opt.Private || setting.Repository.ForcePrivate,
 		AutoInit:         opt.AutoInit,
 		DefaultBranch:    opt.DefaultBranch,
 		TrustModel:       repo_model.ToTrustModel(opt.TrustModel),
