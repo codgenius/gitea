@@ -115,8 +115,8 @@ jobs:
             exit 1
           fi
           manifest=deploy/guardian-demo/deployment.yaml
-          if [[ "$(grep -Ec '^[[:space:]]*image: ghcr.io/codgenius/gitea:[0-9a-f]{40}$' "$manifest")" != 1 ]]; then
-            echo "Expected exactly one immutable Gitea image reference." >&2
+          if [[ "$(grep -Ec '^[[:space:]]*image: ghcr.io/codgenius/gitea:[0-9a-f]{40}$' "$manifest")" != 2 ]]; then
+            echo "Expected exactly two immutable Gitea image references." >&2
             exit 1
           fi
           if [[ "$(grep -Ec '^[[:space:]]*guardian\.fursa\.click/commit-sha: [0-9a-f]{40}$' "$manifest")" != 2 ]]; then
@@ -125,7 +125,7 @@ jobs:
           fi
           sed -i "s#ghcr.io/codgenius/gitea:[0-9a-f]\{40\}#ghcr.io/codgenius/gitea:$SOURCE_SHA#" "$manifest"
           sed -i "s#guardian.fursa.click/commit-sha: [0-9a-f]\{40\}#guardian.fursa.click/commit-sha: $SOURCE_SHA#g" "$manifest"
-          if [[ "$(grep -c "$SOURCE_SHA" "$manifest")" != 3 ]]; then
+          if [[ "$(grep -c "$SOURCE_SHA" "$manifest")" != 4 ]]; then
             echo "Candidate SHA was not recorded in every immutable identity field." >&2
             exit 1
           fi
