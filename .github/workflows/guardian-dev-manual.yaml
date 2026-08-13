@@ -1,0 +1,71 @@
+name: Validate deployed Gitea with Guardian dev
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Gitea pull request number for the deployed commit
+        required: true
+        type: number
+      deployed_sha:
+        description: Exact full SHA deployed to gitea-demo
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate_identity:
+    runs-on: ubuntu-latest
+    outputs:
+      pr_number: ${{ steps.identity.outputs.pr_number }}
+      deployed_sha: ${{ steps.identity.outputs.deployed_sha }}
+    steps:
+      - name: Validate PR and deployed SHA identity
+        id: identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          DEPLOYED_SHA: ${{ inputs.deployed_sha }}
+        run: |
+          if [[ ! "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]; then
+            echo "PR_NUMBER must be a positive integer." >&2
+            exit 1
+          fi
+          if [[ ! "$DEPLOYED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "DEPLOYED_SHA must be a full lowercase 40-character commit SHA." >&2
+            exit 1
+          fi
+          pr_payload="$(gh api --method GET "repos/$EXPECTED_REPOSITORY/pulls/$PR_NUMBER")"
+          if ! jq -e \
+            --arg repository "$EXPECTED_REPOSITORY" \
+            --arg pr_number "$PR_NUMBER" \
+            --arg deployed_sha "$DEPLOYED_SHA" \
+            '(.number | type == "number") and
+              (.number | tostring) == $pr_number and
+              .base.repo.full_name == $repository and
+              .head.sha == $deployed_sha' \
+            <<<"$pr_payload" >/dev/null; then
+            echo "Pull request identity does not match the repository and deployed SHA." >&2
+            exit 1
+          fi
+          {
+            echo "pr_number=$PR_NUMBER"
+            echo "deployed_sha=$DEPLOYED_SHA"
+          } >> "$GITHUB_OUTPUT"
+
+  guardian:
+    needs: validate_identity
+    permissions:
+      contents: read
+    uses: ./.github/workflows/post-deployment-guardian.yaml
+    with:
+      guardian_url: https://dev.guardian.fursa.click
+      deployment_url: https://gitea.guardian.fursa.click
+      target_environment: dev
+      pr_number: ${{ fromJSON(needs.validate_identity.outputs.pr_number) }}
+      expected_commit_sha: ${{ needs.validate_identity.outputs.deployed_sha }}
+      kubernetes_namespace: gitea-demo
+      workload_name: gitea
