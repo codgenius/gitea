@@ -51,9 +51,9 @@ jobs:
             --arg pr_number "$PR_NUMBER" \
             --arg deployed_sha "$DEPLOYED_SHA" \
             '(.number | type == "number") and
-             (.number | tostring) == $pr_number and
-             .base.repo.full_name == $repository and
-             .head.sha == $deployed_sha' \
+              (.number | tostring) == $pr_number and
+              .base.repo.full_name == $repository and
+              .head.sha == $deployed_sha' \
             <<<"$pr_payload" >/dev/null; then
             echo "Pull request identity does not match the repository and deployed SHA." >&2
             exit 1
