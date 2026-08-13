@@ -50,7 +50,7 @@
 							<input name="private" type="checkbox" checked disabled>
 							<label>{{ctx.Locale.Tr "repo.visibility_helper_forced"}}</label>
 						{{else}}
-							<input name="private" type="checkbox" {{if .private}}checked{{end}}>
+							<input name="visibility" type="checkbox" {{if .private}}checked{{end}}>
 							<label>{{ctx.Locale.Tr "repo.visibility_helper"}}</label>
 						{{end}}
 					</div>
