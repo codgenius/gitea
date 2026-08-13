@@ -1,0 +1,164 @@
+name: Build and deliver a Gitea PR candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Gitea pull request number for the candidate commit
+        required: true
+        type: number
+      deployed_sha:
+        description: Exact full PR-head SHA to build and deploy
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: gitea-candidate-delivery
+  cancel-in-progress: false
+
+jobs:
+  validate_build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      pr_number: ${{ steps.identity.outputs.pr_number }}
+      deployed_sha: ${{ steps.identity.outputs.deployed_sha }}
+    steps:
+      - name: Validate the PR-head candidate identity
+        id: identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_REPOSITORY: codgenius/gitea
+          PR_NUMBER: ${{ inputs.pr_number }}
+          DEPLOYED_SHA: ${{ inputs.deployed_sha }}
+        run: |
+          if [[ ! "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]; then
+            echo "PR_NUMBER must be a positive integer." >&2
+            exit 1
+          fi
+          if [[ ! "$DEPLOYED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "DEPLOYED_SHA must be a full lowercase 40-character commit SHA." >&2
+            exit 1
+          fi
+          pr_payload="$(gh api --method GET "repos/$EXPECTED_REPOSITORY/pulls/$PR_NUMBER")"
+          if ! jq -e \
+            --arg repository "$EXPECTED_REPOSITORY" \
+            --arg pr_number "$PR_NUMBER" \
+            --arg deployed_sha "$DEPLOYED_SHA" \
+            '(.number | type == "number") and
+             (.number | tostring) == $pr_number and
+             .base.repo.full_name == $repository and
+             .head.sha == $deployed_sha' \
+            <<<"$pr_payload" >/dev/null; then
+            echo "Pull request identity does not match the repository and deployed SHA." >&2
+            exit 1
+          fi
+          {
+            echo "pr_number=$PR_NUMBER"
+            echo "deployed_sha=$DEPLOYED_SHA"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Check out the validated PR head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ steps.identity.outputs.deployed_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Build and push the exact PR-head image
+        env:
+          GHCR_ACTOR: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
+          IMAGE: ghcr.io/codgenius/gitea
+          SOURCE_SHA: ${{ steps.identity.outputs.deployed_sha }}
+        run: |
+          if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "SOURCE_SHA must be a full lowercase 40-character commit SHA." >&2
+            exit 1
+          fi
+          if [[ "$(git rev-parse HEAD)" != "$SOURCE_SHA" ]]; then
+            echo "Checked-out source does not match the validated PR head." >&2
+            exit 1
+          fi
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
+          docker build --file Dockerfile.rootless --tag "$IMAGE:$SOURCE_SHA" .
+          docker push "$IMAGE:$SOURCE_SHA"
+
+  record_manifest:
+    needs: validate_build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check out trusted main for the manifest commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Record only the candidate deployment on main
+        env:
+          SOURCE_SHA: ${{ needs.validate_build.outputs.deployed_sha }}
+        run: |
+          if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "SOURCE_SHA must be a full lowercase 40-character commit SHA." >&2
+            exit 1
+          fi
+          if ! git diff --quiet || ! git diff --cached --quiet; then
+            echo "Trusted main checkout contains pre-existing tracked changes." >&2
+            exit 1
+          fi
+          manifest=deploy/guardian-demo/deployment.yaml
+          if [[ "$(grep -Ec '^[[:space:]]*image: ghcr.io/codgenius/gitea:[0-9a-f]{40}$' "$manifest")" != 1 ]]; then
+            echo "Expected exactly one immutable Gitea image reference." >&2
+            exit 1
+          fi
+          if [[ "$(grep -Ec '^[[:space:]]*guardian\.fursa\.click/commit-sha: [0-9a-f]{40}$' "$manifest")" != 2 ]]; then
+            echo "Expected exactly two immutable commit annotations." >&2
+            exit 1
+          fi
+          sed -i "s#ghcr.io/codgenius/gitea:[0-9a-f]\{40\}#ghcr.io/codgenius/gitea:$SOURCE_SHA#" "$manifest"
+          sed -i "s#guardian.fursa.click/commit-sha: [0-9a-f]\{40\}#guardian.fursa.click/commit-sha: $SOURCE_SHA#g" "$manifest"
+          if [[ "$(grep -c "$SOURCE_SHA" "$manifest")" != 3 ]]; then
+            echo "Candidate SHA was not recorded in every immutable identity field." >&2
+            exit 1
+          fi
+          if [[ "$(git diff --name-only)" != "$manifest" ]]; then
+            echo "Candidate delivery attempted to modify a non-deployment path." >&2
+            exit 1
+          fi
+          if ! git diff --cached --quiet; then
+            echo "Candidate delivery inherited an unexpected staged change." >&2
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- "$manifest"
+          if ! git diff --quiet; then
+            echo "Candidate delivery left an unstaged tracked change." >&2
+            exit 1
+          fi
+          if [[ "$(git diff --cached --name-only)" != "$manifest" ]]; then
+            echo "Candidate delivery staged a non-deployment path." >&2
+            exit 1
+          fi
+          git commit -m "ci: deliver Gitea candidate $SOURCE_SHA [gitea-delivery]"
+          git push origin HEAD:main
+
+      - name: Publish the validated Guardian handoff
+        env:
+          DEPLOYED_SHA: ${{ needs.validate_build.outputs.deployed_sha }}
+        run: |
+          {
+            echo "## Gitea candidate delivered"
+            echo
+            echo "Deployed SHA: \`$DEPLOYED_SHA\`"
+            echo
+            echo "Run the read-only Guardian dev workflow with this SHA and the validated PR number after deployment health is confirmed."
+          } >> "$GITHUB_STEP_SUMMARY"
