@@ -5,7 +5,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: guardian-validator
-    namespace: guardian-dev
+    namespace: guardian-prod
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole

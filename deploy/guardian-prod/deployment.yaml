@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitea
+  labels:
+    app.kubernetes.io/name: gitea
+  annotations:
+    guardian.fursa.click/commit-sha: de02bb4979a5d989e3df1c29be20b6d180b6dd5f
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gitea
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gitea
+      annotations:
+        guardian.fursa.click/commit-sha: de02bb4979a5d989e3df1c29be20b6d180b6dd5f
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      initContainers:
+        - name: prepare-gitea-volumes
+          image: ghcr.io/codgenius/gitea:de02bb4979a5d989e3df1c29be20b6d180b6dd5f
+          command: [/bin/sh, -ec, mkdir -p /volume/data /volume/config]
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /volume
+      containers:
+        - name: gitea
+          image: ghcr.io/codgenius/gitea:de02bb4979a5d989e3df1c29be20b6d180b6dd5f
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: GITEA__database__DB_TYPE
+              value: sqlite3
+            - name: GITEA__database__PATH
+              value: /var/lib/gitea/gitea/gitea.db
+            - name: GITEA__security__INSTALL_LOCK
+              value: "true"
+            - name: GITEA__metrics__ENABLED
+              value: "true"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /api/healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/healthz
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/gitea
+              subPath: data
+            - name: data
+              mountPath: /etc/gitea
+              subPath: config
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: gitea-data
