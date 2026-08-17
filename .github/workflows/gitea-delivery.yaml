@@ -47,13 +47,20 @@ jobs:
           pushed=false
           for attempt in 1 2 3; do
             git fetch origin main
-            latest_source=$(git log --format='%H%x09%s' origin/main | awk '$0 !~ /\[gitea-delivery\]$/ { print $1; exit }')
-            if [[ -z "$latest_source" ]]; then
-              echo "Could not resolve the latest non-delivery source commit." >&2
+            if ! git merge-base --is-ancestor "$SOURCE_SHA" origin/main; then
+              echo "Delivery source is not an ancestor of current main." >&2
               exit 1
             fi
-            if [[ "$latest_source" != "$SOURCE_SHA" ]]; then
-              echo "Stable delivery $SOURCE_SHA was superseded by $latest_source."
+            superseding_source=
+            while IFS= read -r commit; do
+              if git diff-tree --root --first-parent --no-commit-id --name-only -r "$commit" |
+                awk '$0 !~ /^deploy\/guardian-demo(\/|$)/ && $0 !~ /^deploy\/guardian-prod(\/|$)/ { found=1 } END { exit(found ? 0 : 1) }'; then
+                superseding_source=$commit
+                break
+              fi
+            done < <(git rev-list --first-parent "$SOURCE_SHA..origin/main")
+            if [[ -n "$superseding_source" ]]; then
+              echo "Stable delivery $SOURCE_SHA was superseded by $superseding_source."
               pushed=true
               break
             fi
