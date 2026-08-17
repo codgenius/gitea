@@ -21,6 +21,8 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
       - name: Reject generated delivery commits
         run: .github/scripts/should-deliver.sh
       - name: Build and push immutable image
@@ -38,23 +40,49 @@ jobs:
         env:
           SOURCE_SHA: ${{ github.sha }}
         run: |
-          test "${#SOURCE_SHA}" -eq 40
-          sed -i "s#ghcr.io/codgenius/gitea:[0-9a-f]\{40\}#ghcr.io/codgenius/gitea:$SOURCE_SHA#" deploy/guardian-prod/deployment.yaml
-          sed -i "s#guardian.fursa.click/commit-sha: [0-9a-f]\{40\}#guardian.fursa.click/commit-sha: $SOURCE_SHA#g" deploy/guardian-prod/deployment.yaml
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          manifest=deploy/guardian-prod/deployment.yaml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add deploy/guardian-prod/deployment.yaml
-          git commit -m "ci: deliver Gitea $SOURCE_SHA [gitea-delivery]"
           pushed=false
           for attempt in 1 2 3; do
+            git fetch origin main
+            latest_source=$(git log --format='%H%x09%s' origin/main | awk '$0 !~ /\[gitea-delivery\]$/ { print $1; exit }')
+            if [[ -z "$latest_source" ]]; then
+              echo "Could not resolve the latest non-delivery source commit." >&2
+              exit 1
+            fi
+            if [[ "$latest_source" != "$SOURCE_SHA" ]]; then
+              echo "Stable delivery $SOURCE_SHA was superseded by $latest_source."
+              pushed=true
+              break
+            fi
+            git reset --hard origin/main
+            if [[ "$(grep -Ec '^[[:space:]]*image: ghcr.io/codgenius/gitea:[0-9a-f]{40}$' "$manifest")" != 2 ]]; then
+              echo "Expected exactly two immutable Gitea image references." >&2
+              exit 1
+            fi
+            if [[ "$(grep -Ec '^[[:space:]]*guardian\.fursa\.click/commit-sha: [0-9a-f]{40}$' "$manifest")" != 2 ]]; then
+              echo "Expected exactly two immutable commit annotations." >&2
+              exit 1
+            fi
+            sed -i "s#ghcr.io/codgenius/gitea:[0-9a-f]\{40\}#ghcr.io/codgenius/gitea:$SOURCE_SHA#" "$manifest"
+            sed -i "s#guardian.fursa.click/commit-sha: [0-9a-f]\{40\}#guardian.fursa.click/commit-sha: $SOURCE_SHA#g" "$manifest"
+            if [[ "$(grep -c "$SOURCE_SHA" "$manifest")" != 4 ]]; then
+              echo "Stable SHA was not recorded in every immutable identity field." >&2
+              exit 1
+            fi
+            git add -- "$manifest"
+            if git diff --cached --quiet; then
+              pushed=true
+              break
+            fi
+            git commit -m "ci: deliver Gitea $SOURCE_SHA [gitea-delivery]"
             if git push origin HEAD:main; then
               pushed=true
               break
             fi
-            if [[ "$attempt" != 3 ]]; then
-              git fetch origin main
-              git rebase origin/main
-            fi
+            echo "Stable manifest push attempt $attempt failed; rebuilding from origin/main." >&2
           done
           if [[ "$pushed" != true ]]; then
             echo "Stable manifest push failed after three attempts." >&2
