@@ -53,7 +53,7 @@ jobs:
             fi
             superseding_source=
             while IFS= read -r commit; do
-              if git diff-tree --root --first-parent --no-commit-id --name-only -r "$commit" |
+              if git diff-tree --root -m --first-parent --no-commit-id --name-only -r "$commit" |
                 awk '$0 !~ /^deploy\/guardian-demo(\/|$)/ && $0 !~ /^deploy\/guardian-prod(\/|$)/ { found=1 } END { exit(found ? 0 : 1) }'; then
                 superseding_source=$commit
                 break
