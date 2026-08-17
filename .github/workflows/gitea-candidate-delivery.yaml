@@ -149,7 +149,21 @@ jobs:
             exit 1
           fi
           git commit -m "ci: deliver Gitea candidate $SOURCE_SHA [gitea-delivery]"
-          git push origin HEAD:main
+          pushed=false
+          for attempt in 1 2 3; do
+            if git push origin HEAD:main; then
+              pushed=true
+              break
+            fi
+            if [[ "$attempt" != 3 ]]; then
+              git fetch origin main
+              git rebase origin/main
+            fi
+          done
+          if [[ "$pushed" != true ]]; then
+            echo "Candidate manifest push failed after three attempts." >&2
+            exit 1
+          fi
 
       - name: Publish the validated Guardian handoff
         env:
